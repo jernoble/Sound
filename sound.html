@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html>
+<head>
+	<title>sound test</title>
+	<script src="sound.js"></script>
+	<script>
+	var sound = new Sound();
+	sound.src = 'Coin.wav';
+	sound.play();
+	sound.addEventListener('ended', function() { document.body.appendChild(document.createTextNode('ended')); })
+	</script>
+</head>
+<body>
+
+<button onclick="sound.play()">play</button><button onclick="sound.pause()">pause</button>
+
+</body>
+</html>
