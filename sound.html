@@ -4,15 +4,52 @@
 	<title>sound test</title>
 	<script src="sound.js"></script>
 	<script>
-	var sound = new Sound();
-	sound.src = 'Coin.wav';
-	sound.play();
-	sound.addEventListener('ended', function() { document.body.appendChild(document.createTextNode('ended')); })
+
+	var sound;
+
+	function log(text) {
+		var log = document.getElementById('log');
+		if (!log) {
+			log = document.createElement('div');
+			log.id = 'log';
+			document.body.appendChild(log);
+		}
+
+		var line = document.createElement('div');
+		line.appendChild(document.createTextNode(text));
+		log.insertBefore(line, log.firstChild);
+	}
+
+	function eventLogger(event) {
+		log(event.type);
+	}
+
+	function onload() {
+		sound = new Sound();
+		sound.src = 'Coin.wav';
+		sound.play();
+		sound.addEventListener('ended', eventLogger);
+		sound.addEventListener('play', eventLogger);
+		sound.addEventListener('pause', eventLogger);
+		sound.addEventListener('playing', eventLogger);
+		sound.addEventListener('timeupdate', eventLogger);
+		sound.addEventListener('waiting', eventLogger);
+		sound.addEventListener('volumechange', eventLogger);
+		sound.addEventListener('emptied', eventLogger);
+		sound.addEventListener('loadstart', eventLogger);
+		sound.addEventListener('progress', eventLogger);
+	}
+
 	</script>
 </head>
-<body>
+<body onload="onload()">
 
-<button onclick="sound.play()">play</button><button onclick="sound.pause()">pause</button>
+	<div>
+		<button onclick="sound.play()">play</button>
+		<button onclick="sound.pause()">pause</button>
+		<button onclick="sound.muted = !sound.muted">mute</button>
+		<input type="range" min="0" max="1" step="0.01" onchange="sound.volume = event.target.value" />
+	</div>
 
 </body>
 </html>

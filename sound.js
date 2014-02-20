@@ -129,8 +129,9 @@ Sound.prototype = {
 		if (this._ended && this._playbackRate > 0)
 			this.setCurrentTime(0);
 
-		if (this._paused) {
+		if (this._paused || this._ended) {
 			this._paused = false;
+			this._ended = false;
 			this.dispatchEventAsync(new CustomEvent('play'));
 
 			if (this._readyState < this.READY.FUTURE_DATA)
@@ -162,7 +163,7 @@ Sound.prototype = {
 		this._autoplay = false;
 
 		if (!this._paused) {
-			this._paused = false;
+			this._paused = true;
 			this.dispatchEventAsync(new CustomEvent('timeupdate'));
 			this.dispatchEventAsync(new CustomEvent('pause'));
 		}
@@ -319,12 +320,29 @@ Sound.prototype = {
 	},
 
 	setVolume: function(volume) {
-		this._volume = volume;
-		if (!this.gainNode)
+		if (this._volume == volume)
 			return;
 
-		this.gainNode.gain.value = volume;
+		this._volume = volume;
 		this.dispatchEventAsync(new CustomEvent('volumechange'));
+
+		if (this.gainNode)
+			this.gainNode.gain.value = this._muted ? 0 : this._volume;
+	},
+
+	getMuted: function() {
+		return this._muted;
+	},
+
+	setMuted: function(muted) {
+		if (this._muted == muted)
+			return;
+
+		this._muted = muted;
+		this.dispatchEventAsync(new CustomEvent('volumechange'));
+
+		if (this.gainNode)
+			this.gainNode.gain.value = this._muted ? 0 : this._volume;
 	},
 };
 
