@@ -30,7 +30,6 @@ function Sound() {
 	this.shouldBePlaying = 0;
 	this.startTime = 0;
 	this.nextStartTime = 0;
-	this.load();
 }
 
 Sound.prototype = {
@@ -187,6 +186,13 @@ Sound.prototype = {
 	},
 
 	onended: function() {
+		if (this._loop) {
+			this.stopInternal();
+			this.setCurrentTime(0);
+			this.playInternal();
+			return;
+		}
+
 		this._ended = true;
 		this.nextStartTime = 0;
 		this.stopInternal();
@@ -237,7 +243,8 @@ Sound.prototype = {
 
 	setSrc: function(src) {
 		this._src = src;
-		this.load();
+		if (this._autoplay && this._src != null)
+			this.load();
 	},
 
 	getCurrentSrc: function() {
@@ -343,6 +350,27 @@ Sound.prototype = {
 
 		if (this.gainNode)
 			this.gainNode.gain.value = this._muted ? 0 : this._volume;
+	},
+
+	getAutoplay: function() {
+		return this._autoplay;
+	},
+
+	setAutoplay: function(autoplay) {
+		if (this._autoplay == autoplay)
+			return;
+
+		this._autoplay = autoplay;
+		if (this._autoplay && this._src != null)
+			this.load();
+	},
+
+	getLoop: function() {
+		return this._loop;
+	},
+
+	setLoop: function(loop) {
+		this._loop = loop;
 	},
 };
 
