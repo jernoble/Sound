@@ -29,16 +29,17 @@
 		audio.autoplay = false;
 		audio.src = 'Coin.wav';
 		audio.preload = 'auto';
-		audio.addEventListener('ended', eventLogger);
-		audio.addEventListener('play', eventLogger);
-		audio.addEventListener('pause', eventLogger);
-		audio.addEventListener('playing', eventLogger);
-		audio.addEventListener('timeupdate', eventLogger);
-		audio.addEventListener('waiting', eventLogger);
-		audio.addEventListener('volumechange', eventLogger);
 		audio.addEventListener('emptied', eventLogger);
+		audio.addEventListener('ended', eventLogger);
 		audio.addEventListener('loadstart', eventLogger);
+		audio.addEventListener('pause', eventLogger);
+		audio.addEventListener('play', eventLogger);
+		audio.addEventListener('playing', eventLogger);
 		audio.addEventListener('progress', eventLogger);
+		audio.addEventListener('suspend', eventLogger);
+		audio.addEventListener('timeupdate', eventLogger);
+		audio.addEventListener('volumechange', eventLogger);
+		audio.addEventListener('waiting', eventLogger);
 	}
 
 	</script>

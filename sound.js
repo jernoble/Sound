@@ -49,9 +49,11 @@ function Sound(src) {
 
 	this.ajax = null;
 	this.eventListeners = { };
-	this.shouldBePlaying = 0;
 	this.startTime = 0;
 	this.nextStartTime = 0;
+
+	this.autoplaying = false;
+	this.delayingTheLoadEvent = false;
 
 	this.setSrc(src);
 }
@@ -104,9 +106,21 @@ Sound.prototype = {
 
 		this.setPlaybackRate(this.defaultPlaybackRate);
 		this._error = null;
-		this.shouldBePlaying = this._autoplay;
+		this.autoplaying = true;
 		this.stopInternal();
 
+		this.selectResource();
+		
+	},
+
+	selectResource: function() {
+		this._networkState = this.NETWORK.NO_SOURCE;
+		this.delayingTheLoadEvent = true;
+
+		setTimeout(this.selectResourceAsync.bind(this), 0);
+	},
+
+	selectResourceAsync: function() {
 		if (!this._src) {
 			this._networkState = this.NETWORK.EMPTY;
 			return;
@@ -115,6 +129,17 @@ Sound.prototype = {
 		this._networkState = this.NETWORK.LOADING;
 		this.dispatchEventAsync(new CustomEvent('loadstart'));
 
+		setTimeout(this.fetchResource(), 0);
+	},
+
+	fetchResource: function() {
+		if (this._preload === this.PRELOAD.NONE) {
+			this._networkState = this.NETWORK.IDLE;
+			this.dispatchEventAsync(new CustomEvent('suspend'));
+			this.delayingTheLoadEvent = false;
+			return;
+		}
+
 		this.ajax = new XMLHttpRequest();
 		this.ajax.open("GET", this._src, true);
 		this.ajax.responseType = "arraybuffer";
@@ -122,18 +147,21 @@ Sound.prototype = {
 			if (!this.ajax.response)
 				return;
 			
+			this._networkState = this.NETWORK.IDLE;
+			this.dispatchEventAsync(new CustomEvent('suspend'));
 			this.setReadyState(this.READY.FUTURE_DATA);
 
 			try {
 				Sound.audioContext.decodeAudioData(
-					this.ajax.response, 
+					this.ajax.response,
 					function(buffer) {
 						this.buffer = buffer;
-						if (this.shouldBePlaying)
+						if (this.autoplaying && this._paused && this._autoplay)
 							this.play();
-					}.bind(this), 
-					function(error) { 
-						console.log("Error in creating buffer for sound '" + this._src + "': " + error); 
+						this.dispatchEventAsync(new CustomEvent('canplaythrough'));
+					}.bind(this),
+					function(error) {
+						console.log("Error in creating buffer for sound '" + this._src + "': " + error);
 					}.bind(this)
 				);
 			} catch(exception) {
@@ -143,12 +171,21 @@ Sound.prototype = {
 		this.ajax.onprogress = function() {
 			this.dispatchEventAsync(new CustomEvent('progress'));
 		}.bind(this);
+		this.ajax.onerror = function() {
+			this.error = { code: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED };
+			this._networkState = this.NETWORK.NO_SOURCE;
+			this.dispatchEventAsync(new CustomEvent('error'));
+			this.delayingTheLoadEvent = false;
+		}.bind(this);
 		this.ajax.send();
 	},
 
 	play: function() {
+		if (this._networkState === this.NETWORK.EMPTY)
+			this.loadResource();
+
 		if (!this.buffer) {
-			this.shouldBePlaying = true;			
+			this.autoplaying = true;
 			return;
 		}
 
@@ -189,6 +226,9 @@ Sound.prototype = {
 
 
 	pause: function() {
+		if (this._networkState === this.NETWORK.EMPTY)
+			this.loadResource();
+
 		this._autoplay = false;
 
 		if (!this._paused) {
@@ -273,7 +313,7 @@ Sound.prototype = {
 
 	setSrc: function(src) {
 		this._src = src;
-		if (this._autoplay || this._preload != this.PRELOAD.NONE)
+		if (this._src)
 			this.load();
 	},
 
