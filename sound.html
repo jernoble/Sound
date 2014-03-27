@@ -5,7 +5,7 @@
 	<script src="sound.js"></script>
 	<script>
 
-	var sound;
+	var audio;
 
 	function log(text) {
 		var log = document.getElementById('log');
@@ -25,19 +25,20 @@
 	}
 
 	function onload() {
-		sound = new Sound();
-		sound.src = 'Coin.wav';
-		sound.autoplay = true;
-		sound.addEventListener('ended', eventLogger);
-		sound.addEventListener('play', eventLogger);
-		sound.addEventListener('pause', eventLogger);
-		sound.addEventListener('playing', eventLogger);
-		sound.addEventListener('timeupdate', eventLogger);
-		sound.addEventListener('waiting', eventLogger);
-		sound.addEventListener('volumechange', eventLogger);
-		sound.addEventListener('emptied', eventLogger);
-		sound.addEventListener('loadstart', eventLogger);
-		sound.addEventListener('progress', eventLogger);
+		audio = new Audio();
+		audio.autoplay = false;
+		audio.src = 'Coin.wav';
+		audio.preload = 'auto';
+		audio.addEventListener('ended', eventLogger);
+		audio.addEventListener('play', eventLogger);
+		audio.addEventListener('pause', eventLogger);
+		audio.addEventListener('playing', eventLogger);
+		audio.addEventListener('timeupdate', eventLogger);
+		audio.addEventListener('waiting', eventLogger);
+		audio.addEventListener('volumechange', eventLogger);
+		audio.addEventListener('emptied', eventLogger);
+		audio.addEventListener('loadstart', eventLogger);
+		audio.addEventListener('progress', eventLogger);
 	}
 
 	</script>
@@ -45,11 +46,11 @@
 <body onload="onload()">
 
 	<div>
-		<button onclick="sound.play()">play</button>
-		<button onclick="sound.pause()">pause</button>
-		<button onclick="sound.muted = !sound.muted">mute</button>
-		<input type="range" min="0" max="1" step="0.01" onchange="sound.volume = event.target.value" />
-		<button onclick="sound.loop = !sound.loop">loop</button>
+		<button onclick="audio.play()">play</button>
+		<button onclick="audio.pause()">pause</button>
+		<button onclick="audio.muted = !audio.muted">mute</button>
+		<input type="range" min="0" max="1" step="0.01" onchange="audio.volume = event.target.value" />
+		<button onclick="audio.loop = !audio.loop">loop</button>
 	</div>
 
 </body>

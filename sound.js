@@ -1,11 +1,12 @@
-function Sound() {
+function Sound(src) {
 
-	if (Sound.audioContext === undefined)
-		Sound.audioContext = new webkitAudioContext();
+	if (Sound.audioContext === undefined) {
+		var AudioContext = window.AudioContext || window.webkitAudioContext || window.mozAudioContext;
+		Sound.audioContext = new AudioContext();
+	}
 
-	this._src = null;
 	this._networkState = this.NETWORK.EMPTY;
-	this._preload = true;
+	this._preload = this.PRELOAD.AUTO;
 	this._buffered = {};
 	this._readyState = this.READY.NOTHING;
 	this._seeking = false;
@@ -15,7 +16,7 @@ function Sound() {
 	this._played = {};
 	this._seekable = {};
 	this._ended = false;
-	this._autoplay = false;
+	this._autoplay = true;
 	this._loop = false;
 	this._volume = 1;
 	this._muted = false;
@@ -26,10 +27,12 @@ function Sound() {
 	this.gainNode = null;
 
 	this.ajax = null;
-	this.eventListeners = { }; 
+	this.eventListeners = { };
 	this.shouldBePlaying = 0;
 	this.startTime = 0;
 	this.nextStartTime = 0;
+
+	this.setSrc(src);
 }
 
 Sound.prototype = {
@@ -57,6 +60,12 @@ Sound.prototype = {
 		ENOUGH_DATA: 4,
 	},
 
+	PRELOAD: {
+		NONE: 0,
+		METADATA: 1,
+		AUTO: 2,
+	},
+
 	load: function() {
 		if (this.ajax)
 			this.ajax.abort();
@@ -74,7 +83,7 @@ Sound.prototype = {
 
 		this.setPlaybackRate(this.defaultPlaybackRate);
 		this._error = null;
-		this._autoplay = true;
+		this.shouldBePlaying = this._autoplay;
 		this.stopInternal();
 
 		if (!this._src) {
@@ -243,7 +252,7 @@ Sound.prototype = {
 
 	setSrc: function(src) {
 		this._src = src;
-		if (this._autoplay && this._src != null)
+		if (this._autoplay || this._preload != this.PRELOAD.NONE)
 			this.load();
 	},
 
@@ -264,21 +273,30 @@ Sound.prototype = {
 	},
 
 	getPreload: function() {
-		if (!this._preload)
-			return 'none';
-		return 'auto';
+		switch (this._preload) {
+			case this.PRELOAD.NONE: return 'none';
+			case this.PRELOAD.METADATA: return 'metadata';
+			case this.PRELOAD.AUTO: return 'auto';
+			default: return '';
+		}
 	},
 
 	setPreload: function(preload) {
 		switch (preload) {
-		case 'none':
-			this._preload = false;
-			break;
-		default:
-			this._preload = true;
-			if (!this.buffer)
-				load();
-			break;
+			default:
+			case 'none':
+				this._preload = this.PRELOAD.NONE;
+				break;
+			case 'metadata':
+				this._preload = this.PRELOAD.METADATA;
+				if (this._networkState === this.NETWORK.EMPTY)
+					this.load();
+				break;
+			case 'auto':
+				this._preload = this.PRELOAD.auto;
+				if (this._networkState === this.NETWORK.EMPTY)
+					this.load();
+				break;
 		}
 	},
 
@@ -288,7 +306,7 @@ Sound.prototype = {
 		return this.nextStartTime + Sound.audioContext.currentTIme - this.startTime;
 	},
 
-	setCurrentTime: function(time) { 
+	setCurrentTime: function(time) {
 		this.nextStartTime = time;
 		this.dispatchEventAsync(new CustomEvent('timeupdate'));
 		if (!this.node)
@@ -327,7 +345,7 @@ Sound.prototype = {
 	},
 
 	setVolume: function(volume) {
-		if (this._volume == volume)
+		if (this._volume === volume)
 			return;
 
 		this._volume = volume;
@@ -342,7 +360,7 @@ Sound.prototype = {
 	},
 
 	setMuted: function(muted) {
-		if (this._muted == muted)
+		if (this._muted === muted)
 			return;
 
 		this._muted = muted;
@@ -357,11 +375,11 @@ Sound.prototype = {
 	},
 
 	setAutoplay: function(autoplay) {
-		if (this._autoplay == autoplay)
+		if (this._autoplay === autoplay)
 			return;
 
 		this._autoplay = autoplay;
-		if (this._autoplay && this._src != null)
+		if (this._autoplay && this._networkState === this.NETWORK.EMPTY)
 			this.load();
 	},
 
@@ -469,8 +487,17 @@ Object.defineProperty(Sound.prototype, 'defaultMuted', {
 	set: Sound.prototype.setDefaultMuted,
 });
 
+Object.defineProperty(Sound.prototype, 'preload', {
+	get: Sound.prototype.getPreload,
+	set: Sound.prototype.setPreload,
+});
+
 document.createElement = function(elementName) {
 	if (elementName === "Audio" || elementName === "audio")
 		return new Sound();
 	return Document.prototype.createElement.call(this, elementName);
+};
+
+window.Audio = function(src) {
+	return new Sound(src);
 };
