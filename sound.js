@@ -146,7 +146,7 @@ Sound.prototype = {
 
 	playInternal: function() {
 		this.gainNode = Sound.audioContext.createGainNode();
-		this.gainNode.gain.value = this._volume;
+		this.gainNode.gain.value = this._muted ? 0 : this._volume;
 		this.gainNode.connect(Sound.audioContext.destination);
 
 		this.node = Sound.audioContext.createBufferSource();
