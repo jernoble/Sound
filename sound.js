@@ -216,6 +216,8 @@ Sound.prototype = {
 		this.gainNode.gain.value = this._muted ? 0 : this._volume;
 		this.gainNode.connect(Sound.audioContext.destination);
 
+		this.startTime = Sound.audioContext.currentTime;
+
 		this.node = Sound.audioContext.createBufferSource();
 		this.node.connect(this.gainNode);
 		this.node.buffer = this.buffer;
@@ -364,7 +366,7 @@ Sound.prototype = {
 	getCurrentTime: function() {
 		if (!this.node)
 			return this.nextStartTime;
-		return this.nextStartTime + Sound.audioContext.currentTIme - this.startTime;
+		return this.nextStartTime + Sound.audioContext.currentTime - this.startTime;
 	},
 
 	setCurrentTime: function(time) {
