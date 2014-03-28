@@ -42,6 +42,9 @@ function Sound(src) {
 	this._volume = 1;
 	this._muted = false;
 	this._defaultMuted = false;
+	
+	this.selectResourceTimer = null;
+	this.fetchResourceTimer = null;
 
 	this.buffer = null;
 	this.node = null;
@@ -54,6 +57,7 @@ function Sound(src) {
 
 	this.autoplaying = false;
 	this.delayingTheLoadEvent = false;
+	this.sentLoadedData = false;
 
 	this.setSrc(src);
 }
@@ -90,14 +94,31 @@ Sound.prototype = {
 	},
 
 	load: function() {
-		if (this.ajax)
-			this.ajax.abort();
+		if (this.networkState === this.NETWORK.LOADING || this.networkState === this.NETWORK.IDLE)
+			this.dispatchEventAsync(new CustomEvent('abort'));
 
-		if (this.networkState === this.NETWORK.LOADING || this.networkState === this.NETWORK.IDLE) {
+		if (this.networkState !== this.NETWORK.EMPTY) {
 			this.dispatchEventAsync(new CustomEvent('emptied'));
-			this.setReadyState(this.READY.NOTHING);
+
+			if (this.ajax)
+				this.ajax.abort();
+
+			if (this.selectResourceTimer) {
+				clearTimeout(this.selectResourceTimer);
+				this.selectResourceTimer = null;
+			}
+
+			if (this.fetchResourceTimer) {
+				clearTimeout(this.fetchResourceTimer);
+				this.fetchResourceTimer = null;
+			}
+
+			if (this._readyState != this.READY.NOTHING)
+				this.setReadyState(this.READY.NOTHING);
+
 			if (!this._paused)
 				this.pause();
+
 			if (!this._seeking)
 				this._seeking = false;
 			this.setCurrentTime(0);
@@ -108,33 +129,37 @@ Sound.prototype = {
 		this._error = null;
 		this.autoplaying = true;
 		this.stopInternal();
+		this.sentLoadedData = false;
 
 		this.selectResource();
-		
 	},
 
 	selectResource: function() {
-		this._networkState = this.NETWORK.NO_SOURCE;
+		this.setNetworkState(this.NETWORK.NO_SOURCE);
 		this.delayingTheLoadEvent = true;
 
-		setTimeout(this.selectResourceAsync.bind(this), 0);
+		this.selectResourceTimer = setTimeout(this.selectResourceAsync.bind(this), 0);
 	},
 
 	selectResourceAsync: function() {
+		this.selectResourceTimer = null;
+
 		if (!this._src) {
-			this._networkState = this.NETWORK.EMPTY;
+			this.setNetworkState(this.NETWORK.EMPTY);
 			return;
 		}
 
-		this._networkState = this.NETWORK.LOADING;
+		this.setNetworkState(this.NETWORK.LOADING);
 		this.dispatchEventAsync(new CustomEvent('loadstart'));
 
-		setTimeout(this.fetchResource(), 0);
+		this.fetchResourceTimer = setTimeout(this.fetchResource(), 0);
 	},
 
 	fetchResource: function() {
+		this.fetchResourceTimer = null;
+
 		if (this._preload === this.PRELOAD.NONE) {
-			this._networkState = this.NETWORK.IDLE;
+			this.setNetworkState(this.NETWORK.IDLE);
 			this.dispatchEventAsync(new CustomEvent('suspend'));
 			this.delayingTheLoadEvent = false;
 			return;
@@ -143,41 +168,62 @@ Sound.prototype = {
 		this.ajax = new XMLHttpRequest();
 		this.ajax.open("GET", this._src, true);
 		this.ajax.responseType = "arraybuffer";
-		this.ajax.onload = function() {
-			if (!this.ajax.response)
-				return;
-			
-			this._networkState = this.NETWORK.IDLE;
-			this.dispatchEventAsync(new CustomEvent('suspend'));
-			this.setReadyState(this.READY.FUTURE_DATA);
-
-			try {
-				Sound.audioContext.decodeAudioData(
-					this.ajax.response,
-					function(buffer) {
-						this.buffer = buffer;
-						if (this.autoplaying && this._paused && this._autoplay)
-							this.play();
-						this.dispatchEventAsync(new CustomEvent('canplaythrough'));
-					}.bind(this),
-					function(error) {
-						console.log("Error in creating buffer for sound '" + this._src + "': " + error);
-					}.bind(this)
-				);
-			} catch(exception) {
-				console.log(exception);
-			}
-		}.bind(this);
-		this.ajax.onprogress = function() {
-			this.dispatchEventAsync(new CustomEvent('progress'));
-		}.bind(this);
-		this.ajax.onerror = function() {
-			this.error = { code: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED };
-			this._networkState = this.NETWORK.NO_SOURCE;
-			this.dispatchEventAsync(new CustomEvent('error'));
-			this.delayingTheLoadEvent = false;
-		}.bind(this);
+		this.ajax.onprogress = this.resourceFetchingProgressed.bind(this);
+		this.ajax.onload = this.resourceFetchingSucceeded.bind(this);
+		this.ajax.onerror = this.resourceFetchingFailed.bind(this);
 		this.ajax.send();
+	},
+
+	resourceFetchingProgressed: function() {
+		this.dispatchEventAsync(new CustomEvent('progress'));
+	},
+
+	resourceFetchingSucceeded: function() {
+		if (!this.ajax.response)
+			return;
+		
+		this.setNetworkState(this.NETWORK.IDLE);
+		this.dispatchEventAsync(new CustomEvent('suspend'));
+		this.setReadyState(this.READY.FUTURE_DATA);
+
+		try {
+			Sound.audioContext.decodeAudioData(
+				this.ajax.response,
+				this.resourceDecodingSucceeded.bind(this),
+				this.resourceDecodingFailed.bind(this)
+			);
+		} catch(exception) {
+			console.log(exception);
+		}
+	},
+
+	resourceFetchingFailed: function() {
+		this.error = { code: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED };
+		this.setNetworkState(this.NETWORK.NO_SOURCE);
+		this.dispatchEventAsync(new CustomEvent('error'));
+		this.delayingTheLoadEvent = false;
+	},
+
+	resourceDecodingSucceeded: function(buffer) {
+		this.buffer = buffer;
+
+		this.setCurrentTime(0);
+		this.dispatchEventAsync(new CustomEvent('durationchange'));
+		this.setReadyState(this.READY.METADATA);
+
+		if (this.autoplaying && this._paused && this._autoplay)
+			this.play();
+		this.dispatchEventAsync(new CustomEvent('canplaythrough'));
+	},
+
+	resourceDecodingFailed: function(error) {
+		this._error = { code: HTMLMediaElement.MEDIA_ERR_DECODE };
+		this.dispatchEventAsync(new CustomEvent('error'));
+		if (this._readyState === this.READY.NOTHING) {
+			this.setNetworkState(this.NETWORK.EMPTY);
+			this.dispatchEventAsync('emptied');
+		} else
+			this.setNetworkState(this.NETWORK.IDLE);
 	},
 
 	play: function() {
@@ -327,12 +373,54 @@ Sound.prototype = {
 		return this._networkState;
 	},
 
+	setNetworkState: function(value) {
+		this._networkState = value;
+	},
+
 	getReadyState: function() {
 		return this._readyState;
 	},
 
 	setReadyState: function(value) {
-		this._readyState = value;
+		var oldState = this._readyState;
+		var newState = this._readyState = value;
+
+		if (this._networkState === this.NETWORK.EMPTY)
+			return;
+
+		if (oldState === this.READY.NOTHING && newState === this.READY.METADATA)
+			this.dispatchEventAsync('loadedmetadata');
+
+		if (oldState === this.READY.METADATA && newState >= this.READY.CURRENT_DATA) {
+			if (!this.sentLoadedData)
+				this.dispatchEventAsync('loadeddata');
+		}
+
+		if (oldState >= this.READY.FUTURE_DATA && newState <= this.READY.CURRENT_DATA) {
+			if (this.autoplaying && this._paused && this._autoplay && !this._ended && !this._error) {
+				this.dispatchEventAsync('timeupdate');
+				this.dispatchEventAsync('waiting');
+				this.nextStartTime = Sound.audioContext.currentTime - this.startTime;
+				this.stopInternal();
+			}
+		}
+
+		if (oldState <= this.READY.CURRENT_DATA && newState === this.READY.FUTURE_DATA) {
+			this.dispatchEventAsync('canplay');
+			if (!this._paused)
+				this.dispatchEventAsync('playing');
+		}
+
+		if (oldState <= this.READY.CURRENT_DATA && newState === this.READY.FUTURE_DATA) {
+			this.dispatchEventAsync('canplay');
+			if (!this._paused) {
+				this.dispatchEventAsync('playing');
+				this.playInternal();
+			}
+				
+			if (this.autoplaying && this._paused && this._autoplay)
+				this.play();
+		}
 	},
 
 	getPreload: function() {
