@@ -45,6 +45,7 @@ function Sound(src) {
 
     this.selectResourceTimer = null;
     this.fetchResourceTimer = null;
+    this.timeUpdateTimer = null;
 
     this.buffer = null;
     this.node = null;
@@ -270,8 +271,13 @@ Sound.prototype = {
         this.node.playbackRate.value = this._playbackRate;
         this.node.start(0, this.nextStartTime);
         this.node.onended = this.onended.bind(this);
+
+        this.timeUpdateTimer = setInterval(this.sendTimeUpdate.bind(this), 250);
     },
 
+    sendTimeUpdate: function() {
+        this.dispatchEventAsync(new CustomEvent('timeupdate'));
+    },
 
     pause: function() {
         if (this._networkState === this.NETWORK.EMPTY)
@@ -301,6 +307,8 @@ Sound.prototype = {
             this.gainNode.disconnect();
             delete this.gainNode;
         }
+
+        clearInterval(this.timeUpdateTimer);
     },
 
     onended: function() {
