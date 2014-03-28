@@ -46,7 +46,12 @@
 	</script>
 </head>
 <body onload="onload()">
-
+	<div>
+		<select onchange="audio.src = event.target.value">
+			<option value="Coin.wav">Coin.wav</option>
+			<option value="Overworld.mp3">Overworld.mp3</option>
+		</select>
+	</div>
 	<div>
 		<button onclick="audio.play()">play</button>
 		<button onclick="audio.pause()">pause</button>
