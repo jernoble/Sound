@@ -36,7 +36,6 @@ function Sound(src) {
     this._playbackRate = 1;
     this._played = {};
     this._seekable = {};
-    this._ended = false;
     this._autoplay = true;
     this._loop = false;
     this._volume = 1;
@@ -239,16 +238,15 @@ Sound.prototype = {
         if (this.node)
             return;
 
-        if (this._ended) {
+        if (this.endedPlayback()) {
             if (this._playbackRate > 0)
                 this.setCurrentTime(0);
             else
                 this.setCurrentTime(this.duration)
         }
 
-        if (this._paused || this._ended) {
+        if (this._paused || this.endedPlayback()) {
             this._paused = false;
-            this._ended = false;
             this.dispatchEventAsync(new CustomEvent('play'));
 
             if (this._readyState < this.READY.FUTURE_DATA)
@@ -318,14 +316,30 @@ Sound.prototype = {
 
     onended: function() {
         if (this._loop) {
+            this.nextStartTime = this._playbackRate < 0 ? this.duration : 0;
             this.stopInternal();
             this.playInternal();
             return;
         }
 
-        this._ended = true;
+        this.nextStartTime = this._playbackRate < 0 ? 0 : this.duration;
         this.stopInternal();
         this.dispatchEventAsync(new CustomEvent('ended'));
+    },
+
+    endedPlayback: function() {
+        if (this._readyState < this.READY.METADATA)
+            return false;
+
+        if (this.currentTime >= this.duration && this._playbackRate >= 0 && !this._loop)
+            return true;
+
+        if (this.currentTime <= 0 && this._playbackRate <= 0)
+            return true;
+    },
+
+    getEnded: function() {
+        return this.endedPlayback() && this._playbackRate >= 0;
     },
 
     addEventListener: function(eventName, handler) {
@@ -408,7 +422,7 @@ Sound.prototype = {
         }
 
         if (oldState >= this.READY.FUTURE_DATA && newState <= this.READY.CURRENT_DATA) {
-            if (this.autoplaying && this._paused && this._autoplay && !this._ended && !this._error) {
+            if (this.autoplaying && this._paused && this._autoplay && !this.endedPlayback() && !this._error) {
                 this.dispatchEventAsync('timeupdate');
                 this.dispatchEventAsync('waiting');
                 this.nextStartTime = this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
@@ -499,8 +513,15 @@ Sound.prototype = {
         this.dispatchEventAsync(new CustomEvent('ratechange'));
 
         if (this.node) {
-            this.nextStartTime = oldPlaybackRate * (Sound.audioContext.currentTime - this.startTime);
+            var currentTime = Sound.audioContext.currentTime
+            this.nextStartTime += oldPlaybackRate * (currentTime - this.startTime);
+            this.startTime = currentTime;
             this.node.playbackRate.value = this._playbackRate;
+
+            if ((oldPlaybackRate <= 0) != (this._playbackRate <= 0)) {
+                this.stopInternal();
+                this.playInternal();
+            }
         }
     },
 
