@@ -185,7 +185,7 @@ Sound.prototype = {
 
         this.setNetworkState(this.NETWORK.IDLE);
         this.dispatchEventAsync(new CustomEvent('suspend'));
-        this.setReadyState(this.READY.FUTURE_DATA);
+        this.setReadyState(this.READY.METADATA);
 
         try {
             Sound.audioContext.decodeAudioData(
@@ -210,7 +210,7 @@ Sound.prototype = {
 
         this.setCurrentTime(0);
         this.dispatchEventAsync(new CustomEvent('durationchange'));
-        this.setReadyState(this.READY.METADATA);
+        this.setReadyState(this.READY.ENOUGH_DATA);
 
         if (this.autoplaying && this._paused && this._autoplay)
             this.play();
@@ -239,8 +239,12 @@ Sound.prototype = {
         if (this.node)
             return;
 
-        if (this._ended && this._playbackRate > 0)
-            this.setCurrentTime(0);
+        if (this._ended) {
+            if this._playbackRate > 0)
+                this.setCurrentTime(0);
+            else
+                this.setCurrentTime(this.duration)
+        }
 
         if (this._paused || this._ended) {
             this._paused = false;
@@ -269,8 +273,9 @@ Sound.prototype = {
         this.node.connect(this.gainNode);
         this.node.buffer = this.buffer;
         this.node.playbackRate.value = this._playbackRate;
-        this.node.start(0, this.nextStartTime);
         this.node.onended = this.onended.bind(this);
+		var remainingDuration = this._playbackRate < 0 ? this.nextStartTime : this.buffer.duration - this.nextStartTime;
+        this.node.start(0, this.nextStartTime, remainingDuration);
 
         this.timeUpdateTimer = setInterval(this.sendTimeUpdate.bind(this), 250);
     },
@@ -294,7 +299,7 @@ Sound.prototype = {
         if (!this.buffer || !this.node)
             return;
 
-        this.nextStartTime = Sound.audioContext.currentTime - this.startTime;
+        this.nextStartTime = this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
         this.stopInternal();
     },
 
@@ -314,13 +319,11 @@ Sound.prototype = {
     onended: function() {
         if (this._loop) {
             this.stopInternal();
-            this.setCurrentTime(0);
             this.playInternal();
             return;
         }
 
         this._ended = true;
-        this.nextStartTime = 0;
         this.stopInternal();
         this.dispatchEventAsync(new CustomEvent('ended'));
     },
@@ -408,7 +411,7 @@ Sound.prototype = {
             if (this.autoplaying && this._paused && this._autoplay && !this._ended && !this._error) {
                 this.dispatchEventAsync('timeupdate');
                 this.dispatchEventAsync('waiting');
-                this.nextStartTime = Sound.audioContext.currentTime - this.startTime;
+                this.nextStartTime = this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
                 this.stopInternal();
             }
         }
@@ -462,7 +465,7 @@ Sound.prototype = {
     getCurrentTime: function() {
         if (!this.node)
             return this.nextStartTime;
-        return this.nextStartTime + Sound.audioContext.currentTime - this.startTime;
+        return this.nextStartTime + this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
     },
 
     setCurrentTime: function(time) {
@@ -491,12 +494,22 @@ Sound.prototype = {
     },
 
     setPlaybackRate: function(rate) {
+        var oldPlaybackRate = this._playbackRate;
         this._playbackRate = rate;
 
         if (this.buffer) {
+            this.nextStartTime = oldPlaybackRate * (Sound.audioContext.currentTime - this.startTime);
             this.stopInternal();
             this.playInternal();
         }
+    },
+
+    getDefaultPlaybackRate: function() {
+        return this._defaultPlaybackRate;
+    },
+
+    setDefaultPlaybackRate: function(rate) {
+        this._defaultPlaybackRate = rate;
     },
 
     getVolume: function() {
