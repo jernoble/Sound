@@ -240,7 +240,7 @@ Sound.prototype = {
             return;
 
         if (this._ended) {
-            if this._playbackRate > 0)
+            if (this._playbackRate > 0)
                 this.setCurrentTime(0);
             else
                 this.setCurrentTime(this.duration)
@@ -469,7 +469,7 @@ Sound.prototype = {
     },
 
     setCurrentTime: function(time) {
-        this.nextStartTime = time;
+        this.nextStartTime = parseFloat(time);
         this.dispatchEventAsync(new CustomEvent('timeupdate'));
         if (!this.node)
             return;
@@ -495,12 +495,12 @@ Sound.prototype = {
 
     setPlaybackRate: function(rate) {
         var oldPlaybackRate = this._playbackRate;
-        this._playbackRate = rate;
+        this._playbackRate = parseFloat(rate);
+        this.dispatchEventAsync(new CustomEvent('ratechange'));
 
-        if (this.buffer) {
+        if (this.node) {
             this.nextStartTime = oldPlaybackRate * (Sound.audioContext.currentTime - this.startTime);
-            this.stopInternal();
-            this.playInternal();
+            this.node.playbackRate.value = this._playbackRate;
         }
     },
 
@@ -509,7 +509,8 @@ Sound.prototype = {
     },
 
     setDefaultPlaybackRate: function(rate) {
-        this._defaultPlaybackRate = rate;
+        this._defaultPlaybackRate = parseFloat(rate);
+        this.dispatchEventAsync(new CustomEvent('ratechange'));
     },
 
     getVolume: function() {
@@ -520,7 +521,7 @@ Sound.prototype = {
         if (this._volume === volume)
             return;
 
-        this._volume = volume;
+        this._volume = parseFloat(volume);
         this.dispatchEventAsync(new CustomEvent('volumechange'));
 
         if (this.gainNode)
