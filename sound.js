@@ -272,8 +272,10 @@ Sound.prototype = {
         this.node.buffer = this.buffer;
         this.node.playbackRate.value = this._playbackRate;
         this.node.onended = this.onended.bind(this);
-		var remainingDuration = this._playbackRate < 0 ? this.nextStartTime : this.buffer.duration - this.nextStartTime;
-        this.node.start(0, this.nextStartTime, remainingDuration);
+        if (this._playbackRate < 0)
+            this.node.start(0, 0, this.nextStartTime);
+        else
+            this.node.start(0, this.nextStartTime, this.buffer.duration - this.nextStartTime);
 
         this.timeUpdateTimer = setInterval(this.sendTimeUpdate.bind(this), 250);
     },
