@@ -230,7 +230,7 @@ class Sound {
     }
 
     playInternal() {
-        this.gainNode = Sound.audioContext.createGainNode();
+        this.gainNode = Sound.audioContext.createGain();
         this.gainNode.gain.value = this._muted ? 0 : this._volume;
         this.gainNode.connect(Sound.audioContext.destination);
 
