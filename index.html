@@ -2,6 +2,8 @@
 <html>
 <head>
 	<title>sound test</title>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<script src="sound.js"></script>
 	<script>
 
@@ -42,6 +44,7 @@
 		audio.addEventListener('suspend', eventLogger);
 		audio.addEventListener('timeupdate', eventLogger);
 		audio.addEventListener('volumechange', eventLogger);
+		audio.addEventListener('volumechange', updateVolume);
 		audio.addEventListener('waiting', eventLogger);
 		audio.addEventListener('timeupdate', updateTime);
 		audio.addEventListener('durationchange', eventLogger);
@@ -51,53 +54,78 @@
 	}
 
 	function formatTime(time) {
-		var seconds = (time % 60).toFixed(0);
-		var minutes = (time / 60).toFixed(0);
+		let seconds = (time % 60).toFixed(0);
+		let minutes = (time / 60).toFixed(0);
 		return ("0" + minutes).substr(-2, 2) + ':' + ("0" + seconds).substr(-2, 2);
 	}
 
 	function updateTime() {
-		var time = document.getElementById('time');
-		var currentTime = audio.currentTime;
+		let time = document.getElementById('time');
+		let currentTime = audio.currentTime;
 		time.innerText = formatTime(currentTime);
 
-		var timeline = document.getElementById('timeline');
+		let timeline = document.getElementById('timeline');
 		timeline.value = currentTime;
 	}
 
 	function updateDuration() {
-		var duration = document.getElementById('duration');
+		let duration = document.getElementById('duration');
 		duration.innerText = formatTime(audio.duration);
 
-		var timeline = document.getElementById('timeline');
+		let timeline = document.getElementById('timeline');
 		timeline.max = audio.duration;
 	}
 
 	function updateRate() {
-		var rate = document.getElementById('rate');
+		let rate = document.getElementById('rate');
 		rate.value = audio.playbackRate;
+		let playbackRate = document.getElementById('playback-rate');
+		playbackRate.innerText = audio.playbackRate.toFixed(2);
+	}
+
+	function updateVolume(event) {
+		if (audio.muted)
+			volume.innerText = 'muted';
+		else
+			volume.innerText = `${(audio.volume * 100).toFixed(0)}%`;
 	}
 
 	</script>
+	<style>
+		#player {
+			display: inline-block;
+			border: 1px solid black;
+			padding: 1em;
+			margin: 1em;
+		}
+	</style>
 </head>
 <body onload="onload()">
-	<div>
-		<select onchange="audio.src = event.target.value">
-			<option value="Coin.wav">Coin.wav</option>
-			<option value="Overworld.mp3">Overworld.mp3</option>
-		</select>
-	</div>
-	<div>
-		<input type="range" min="0" max="1" step="0.01" value="1" oninput="audio.volume = event.target.value" />
-		<button onclick="audio.play()">play</button>
-		<button onclick="audio.pause()">pause</button>
-		<button onclick="audio.muted = !audio.muted">mute</button>
-		<span id="time">--:--</span>
-		<input id="timeline" type="range" min="0" max="1" step="0.01" value="0" oninput="audio.currentTime = event.target.value" />
-		<span id="duration">--:--</span>
-		<button onclick="audio.loop = !audio.loop">loop</button>
-		<button onclick="audio.playbackRate = -audio.playbackRate">reverse</button>
-		<input id="rate" type="range" min="-2" max="2" step="0.01" value="1" oninput="audio.playbackRate = event.target.value" />
+	<div id=player>
+		<div>
+			<select onchange="audio.src = event.target.value">
+				<option value="Coin.wav">Coin.wav</option>
+				<option value="Overworld.mp3">Overworld.mp3</option>
+			</select>
+		</div>
+		<div>
+			Volume: <input type="range" min="0" max="1" step="0.01" value="1" oninput="audio.volume = event.target.value" /> <span id="volume">100%</span>
+		</div>
+		<div>
+			<button onclick="audio.play()">play</button>
+			<button onclick="audio.pause()">pause</button>
+			<button onclick="audio.muted = !audio.muted">mute</button>
+			<button onclick="audio.loop = !audio.loop">loop</button>
+			<button onclick="audio.playbackRate = -audio.playbackRate">reverse</button>
+		</div>
+		<div>
+			<span id="time">--:--</span>
+			<input id="timeline" type="range" min="0" max="1" step="0.01" value="0" oninput="audio.currentTime = event.target.value" />
+			<span id="duration">--:--</span>
+		</div>
+		<div>
+			Rate: <input id="rate" type="range" min="-2" max="2" step="0.01" value="1" oninput="audio.playbackRate = event.target.value" /> <span id="playback-rate">1.00x</span>
+		</div>
 	</div>
 
 </body>

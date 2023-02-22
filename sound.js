@@ -26,6 +26,10 @@ class Sound {
             Sound.audioContext = new AudioContext();
         }
 
+        try {
+            navigator.audioSession.type = 'playback';
+        } catch(e) { };
+
         this._networkState = this.NETWORK.EMPTY;
         this._preload = this.PRELOAD.AUTO;
         this._buffered = {};
