@@ -17,7 +17,16 @@
 			document.body.appendChild(log);
 		}
 
-		var line = document.createElement('div');
+		let lastLine = log.firstChild;
+		if (lastLine && lastLine.type === text) {
+			lastLine.count += 1;
+			lastLine.innerText = `${lastLine.type} x${lastLine.count}`;
+			return;
+		}
+
+		let line = document.createElement('div');
+		line.type = text;
+		line.count = 1;
 		line.appendChild(document.createTextNode(text));
 		log.insertBefore(line, log.firstChild);
 	}
@@ -80,7 +89,7 @@
 		let rate = document.getElementById('rate');
 		rate.value = audio.playbackRate;
 		let playbackRate = document.getElementById('playback-rate');
-		playbackRate.innerText = audio.playbackRate.toFixed(2);
+		playbackRate.innerText = `${audio.playbackRate.toFixed(2)}x`;
 	}
 
 	function updateVolume(event) {
@@ -98,6 +107,24 @@
 			padding: 1em;
 			margin: 1em;
 		}
+		#player div {
+			display: flex;
+			flex-direction: row;
+			justify-content: center;
+			gap: 0.5em;
+		}
+		#player div:has(+div) {
+			margin-bottom: 0.5em;
+		}
+		#player div:has(select) {
+			justify-content: flex-start;
+		}
+		#player div span {
+			flex-grow: 0;
+		}
+		#player div input {
+			flex-grow: 1;
+		}
 	</style>
 </head>
 <body onload="onload()">
@@ -109,7 +136,7 @@
 			</select>
 		</div>
 		<div>
-			Volume: <input type="range" min="0" max="1" step="0.01" value="1" oninput="audio.volume = event.target.value" /> <span id="volume">100%</span>
+			<span>Volume:</span><input type="range" min="0" max="1" step="0.01" value="1" oninput="audio.volume = event.target.value" /> <span id="volume">100%</span>
 		</div>
 		<div>
 			<button onclick="audio.play()">play</button>
@@ -124,7 +151,7 @@
 			<span id="duration">--:--</span>
 		</div>
 		<div>
-			Rate: <input id="rate" type="range" min="-2" max="2" step="0.01" value="1" oninput="audio.playbackRate = event.target.value" /> <span id="playback-rate">1.00x</span>
+			<span>Rate:</span><input id="rate" type="range" min="-2" max="2" step="0.01" value="1" oninput="audio.playbackRate = event.target.value" /> <span id="playback-rate">1.00x</span>
 		</div>
 	</div>
 
