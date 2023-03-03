@@ -63,6 +63,8 @@ class Sound {
         this.delayingTheLoadEvent = false;
         this.sentLoadedData = false;
 
+        this._seekOperation = null;
+
         this.src = src;
     }
 
@@ -92,9 +94,10 @@ class Sound {
             if (!this._paused)
                 this.pause();
 
-            if (!this._seeking)
-                this._seeking = false;
-            this.currentTime = 0;
+            if (this._seeking)
+                this.abortSeek();
+
+            this.nextStartTime = 0;
             this.buffer = null;
         }
 
@@ -180,7 +183,6 @@ class Sound {
     resourceDecodingSucceeded(buffer) {
         this.buffer = buffer;
 
-        this.currentTime = 0;
         this.dispatchEventAsync(new CustomEvent('durationchange'));
         this.readyState = this.READY.ENOUGH_DATA;
 
@@ -213,9 +215,9 @@ class Sound {
 
         if (this.endedPlayback()) {
             if (this._playbackRate > 0)
-                this.currentTime = 0;
+                this.seekInternal(0);
             else
-                this.currentTime = this.duration
+                this.seekInternal(this.duration);
         }
 
         if (this._paused || this.endedPlayback()) {
@@ -299,7 +301,7 @@ class Sound {
 
         this.dispatchEventAsync(new CustomEvent('timeupdate'));
 
-        if (this.endedPlayback() && this._playbackRate > 0 && !this._plaused) {
+        if (this.endedPlayback() && !this._paused) {
             this._paused = true;
             this.nextStartTime = this._playbackRate < 0 ? 0 : this.duration;
             this.stopInternal();
@@ -463,13 +465,51 @@ class Sound {
     }
 
     set currentTime(time) {
-        this.nextStartTime = parseFloat(time);
-        this.dispatchEventAsync(new CustomEvent('timeupdate'));
-        if (!this.node)
+        this.seekInternal(time, {async: true})
+    }
+
+    seekInternal(time, options) {
+        if (this._readyState == this.READY.NOTHING)
             return;
 
-        this.stopInternal();
-        this.playInternal();
+        if (this._seeking)
+            abortSeek();
+
+        this._seeking = true;
+
+        if (this.node)
+            this.stopInternal();
+
+        let performSeek = (time) => {
+            let targetTime = parseFloat(time);
+            if (targetTime > this.duration)
+                targetTime = this.duration;
+            if (targetTime < 0)
+                targetTime = 0;
+
+            this.dispatchEventAsync(new CustomEvent('seeking'));
+            this.nextStartTime = targetTime;
+            this._seeking = false;
+            this.dispatchEventAsync(new CustomEvent('timeupdate'));
+            this.dispatchEventAsync(new CustomEvent('seeked'));
+
+            if (!this._paused)
+                this.playInternal();
+        }
+
+        if (options?.async)
+            this._seekOperation = window.setTimeout(() => { performSeek(time); });
+        else
+            performSeek(time);
+    }
+
+    abortSeek() {
+        if (!this._seeking || !this._seekOperation)
+            return;
+
+        this._seeking = false;
+        clearTimeout(_seekOperation);
+        _seekOperation = null;
     }
 
     get duration() {

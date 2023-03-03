@@ -63,6 +63,13 @@
 		audio.addEventListener('durationchange', updateDuration);
 		audio.addEventListener('ratechange', eventLogger);
 		audio.addEventListener('ratechange', updateRate);
+		audio.addEventListener('seeking', eventLogger);
+		audio.addEventListener('seeked', eventLogger);
+		updateRate();
+		updateTime();
+		updatePlayPause();
+		updateVolume();
+		updateDuration();
 	}
 
 	function formatTime(time) {
