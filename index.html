@@ -44,10 +44,13 @@
 		audio.addEventListener('emptied', eventLogger);
 		audio.addEventListener('ended', eventLogger);
 		audio.addEventListener('ended', updateTime);
+		audio.addEventListener('ended', updatePlayPause);
 		audio.addEventListener('loadstart', eventLogger);
 		audio.addEventListener('pause', eventLogger);
 		audio.addEventListener('pause', updateTime);
+		audio.addEventListener('pause', updatePlayPause);
 		audio.addEventListener('play', eventLogger);
+		audio.addEventListener('play', updatePlayPause);
 		audio.addEventListener('playing', eventLogger);
 		audio.addEventListener('progress', eventLogger);
 		audio.addEventListener('suspend', eventLogger);
@@ -90,13 +93,26 @@
 		rate.value = audio.playbackRate;
 		let playbackRate = document.getElementById('playback-rate');
 		playbackRate.innerText = `${audio.playbackRate.toFixed(2)}x`;
+		let reverse = document.getElementById('reverse');
+		reverse.innerText = `reverse ${audio.playbackRate < 0 ? '☑︎' : '☐'}`;
 	}
 
-	function updateVolume(event) {
-		if (audio.muted)
-			volume.innerText = 'muted';
-		else
-			volume.innerText = `${(audio.volume * 100).toFixed(0)}%`;
+	function updateVolume() {
+		let volume = document.getElementById('volume');
+		volume.innerText = audio.muted ? 'muted' : `${(audio.volume * 100).toFixed(0)}%`;
+
+		let muted = document.getElementById('muted');
+		muted.innerText = `mute ${audio.muted ? '☑︎' : '☐'}`;
+	}
+
+	function updatePlayPause() {
+		let playPause = document.getElementById('play-pause');
+		playPause.innerText = audio.paused ? 'play' : 'pause';
+	}
+
+	function updateLoop() { 
+		let loop = document.getElementById('loop');
+		loop.innerText = `loop ${audio.loop ? '☑︎' : '☐'}`;
 	}
 
 	</script>
@@ -139,11 +155,10 @@
 			<span>Volume:</span><input type="range" min="0" max="1" step="0.01" value="1" oninput="audio.volume = event.target.value" /> <span id="volume">100%</span>
 		</div>
 		<div>
-			<button onclick="audio.play()">play</button>
-			<button onclick="audio.pause()">pause</button>
-			<button onclick="audio.muted = !audio.muted">mute</button>
-			<button onclick="audio.loop = !audio.loop">loop</button>
-			<button onclick="audio.playbackRate = -audio.playbackRate">reverse</button>
+			<button id="play-pause" onclick="audio.paused ? audio.play() : audio.pause()">play</button>
+			<button id="muted" onclick="audio.muted = !audio.muted">mute ☐</button>
+			<button id="loop" onclick="audio.loop = !audio.loop; updateLoop()">loop ☐</button>
+			<button id="reverse" onclick="audio.playbackRate = -audio.playbackRate">reverse ☐</button>
 		</div>
 		<div>
 			<span id="time">--:--</span>

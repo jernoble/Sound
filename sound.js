@@ -248,7 +248,7 @@ class Sound {
         if (this._playbackRate < 0)
             this.node.start(0, 0, this.nextStartTime);
         else
-            this.node.start(0, this.nextStartTime, this.buffer.duration - this.nextStartTime);
+            this.node.start(0, this.nextStartTime, Math.max(0, this.buffer.duration - this.nextStartTime));
 
         this.timeUpdateTimer = setInterval(this.sendTimeUpdate.bind(this), 250);
     }
@@ -297,8 +297,14 @@ class Sound {
             return;
         }
 
-        this.nextStartTime = this._playbackRate < 0 ? 0 : this.duration;
-        this.stopInternal();
+        this.dispatchEventAsync(new CustomEvent('timeupdate'));
+
+        if (this.endedPlayback() && this._playbackRate > 0 && !this._plaused) {
+            this._paused = true;
+            this.nextStartTime = this._playbackRate < 0 ? 0 : this.duration;
+            this.stopInternal();
+            this.dispatchEventAsync(new CustomEvent('pause'));
+        }
         this.dispatchEventAsync(new CustomEvent('ended'));
     }
 
@@ -309,7 +315,7 @@ class Sound {
         if (this.currentTime >= this.duration && this._playbackRate >= 0 && !this._loop)
             return true;
 
-        if (this.currentTime <= 0 && this._playbackRate <= 0)
+        if (this.currentTime <= 0 && this._playbackRate <= 0 && !this._loop)
             return true;
     }
 
