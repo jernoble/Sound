@@ -20,316 +20,477 @@
  */
 
 class Sound {
+    static ERR = {
+        NONE: 0,
+        ABORTED: 1,
+        NETWORK: 2,
+        DECODE: 3,
+        SRC_NOT_SUPPORTED: 4,
+    };
+
+    static NETWORK = {
+        EMPTY: 0,
+        IDLE: 1,
+        LOADING: 2,
+        NO_SOURCE: 3,
+    };
+
+    static READY = {
+        NOTHING: 0,
+        METADATA: 1,
+        CURRENT_DATA: 2,
+        FUTURE_DATA: 3,
+        ENOUGH_DATA: 4,
+    };
+
+    static PRELOAD = {
+        NONE: 0,
+        METADATA: 1,
+        AUTO: 2,
+    };
+
+    static TimeRanges = class TimeRanges {
+        constructor() {
+            Object.defineProperties(this, {
+                length: {
+                    get: this.#getLength,
+                    enumerable: true,
+                },
+            });
+        }
+
+        #ranges = [];
+
+        #getLength() {
+            return this.#ranges.length;
+        }
+
+        start(index) {
+            if (index >= this.length || index < 0)
+                throw new RangeError();
+            return this.#ranges[index].start;
+        }
+
+        end(index) {
+            if (index >= this.length || index < 0)
+                throw new RangeError();
+            return this.#ranges[index].end;
+        }
+
+        add(start, end) {
+            let found = this.#ranges.findLast(range => { return range.end <= start });
+            if (found === undefined) {
+                this.#ranges.push({ start: start, end: end });
+                return;
+            }
+        }
+
+        clear() {
+            this.#ranges = [];
+        }
+    };
+
+    #priv = {
+        networkState: Sound.NETWORK.EMPTY,
+        preload: Sound.PRELOAD.AUTO,
+        buffered: new Sound.TimeRanges(),
+        readyState: Sound.READY.NOTHING,
+        seeking: false,
+        paused: true,
+        defaultPlaybackRate: 1,
+        playbackRate: 1,
+        played: {},
+        seekable: new Sound.TimeRanges(),
+        autoplay: true,
+        loop: false,
+        volume: 1,
+        muted: false,
+        defaultMuted: false,
+        error: null,
+        seekOperation: null,
+        selectResourceTimer: null,
+        fetchResourceTimer: null,
+        timeUpdateTimer: null,
+        buffer: null,
+        node: null,
+        gainNode: null,
+        ajax: null,
+        eventListeners: { },
+        startTime: 0,
+        nextStartTime: 0,
+        autoplaying: false,
+        delayingTheLoadEvent: false,
+        sentLoadedData: false,
+        src: '',
+    };
+
     constructor(src) {
         if (Sound.audioContext === undefined) {
             var AudioContext = window.AudioContext || window.webkitAudioContext || window.mozAudioContext;
-            Sound.audioContext = new AudioContext();
+            try {
+                Sound.audioContext = new AudioContext({latencyHint: "playback"});
+            } catch(e) {
+                Sound.audioContext = new AudioContext();
+            }
         }
 
         try {
             navigator.audioSession.type = 'playback';
         } catch(e) { };
 
-        this._networkState = this.NETWORK.EMPTY;
-        this._preload = this.PRELOAD.AUTO;
-        this._buffered = {};
-        this._readyState = this.READY.NOTHING;
-        this._seeking = false;
-        this._paused = true;
-        this._defaultPlaybackRate = 1;
-        this._playbackRate = 1;
-        this._played = {};
-        this._seekable = {};
-        this._autoplay = true;
-        this._loop = false;
-        this._volume = 1;
-        this._muted = false;
-        this._defaultMuted = false;
+        Object.defineProperties(this, {
+            duration: {
+                get: this.#getDuration,
+                enumerable: true,
+            },
+            currentTime: {
+                get: this.#getCurrentTime,
+                set: this.#setCurrentTime,
+                enumerable: true,
+            },
+            src: {
+                get: this.#getSrc,
+                set: this.#setSrc,
+                enumerable: true,
+            },
+            currentSrc: {
+                get: this.#getCurrentSrc,
+                enumerable: true,
+            },
+            ended: {
+                get: this.#getEnded,
+                enumerable: true,
+            },
+            networkState: {
+                get: this.#getNetworkState,
+                enumerable: true,
+            },
+            readyState: {
+                get: this.#getReadyState,
+                enumerable: true,
+            },
+            preload: {
+                get: this.#getPreload,
+                set: this.#setPreload,
+                enumerable: true,
+            },
+            paused: {
+                get: this.#getPaused,
+                enumerable: true,
+            },
+            playbackRate: {
+                get: this.#getPlaybackRate,
+                set: this.#setPlaybackRate,
+                enumerable: true,
+            },
+            defaultPlaybackRate: { 
+                get: this.#getDefaultPlaybackRate,
+                set: this.#setDefaultPlaybackRate,
+                enumerable: true,
+            },
+            volume: { 
+                get: this.#getVolume,
+                set: this.#setVolume,
+                enumerable: true,
+            },
+            muted: { 
+                get: this.#getMuted,
+                set: this.#setMuted,
+                enumerable: true,
+            },
+            autoplay: { 
+                get: this.#getAutoplay,
+                set: this.#setAutoplay,
+                enumerable: true,
+            },
+            loop: { 
+                get: this.#getLoop,
+                set: this.#setLoop,
+                enumerable: true,
+            },
+            seekable: {
+                get: this.#getSeekable,
+                enumerable: true,
+            },
+            buffered: {
+                get: this.#getBuffered,
+                enumerable: true,
+            }
+        });
 
-        this.selectResourceTimer = null;
-        this.fetchResourceTimer = null;
-        this.timeUpdateTimer = null;
-
-        this.buffer = null;
-        this.node = null;
-        this.gainNode = null;
-
-        this.ajax = null;
-        this.eventListeners = { };
-        this.startTime = 0;
-        this.nextStartTime = 0;
-
-        this.autoplaying = false;
-        this.delayingTheLoadEvent = false;
-        this.sentLoadedData = false;
-
-        this._seekOperation = null;
-
-        this.src = src;
+        this.#priv.sentLoadedData = false;
+        this.#priv.src = src;
     }
 
     load() {
-        if (this.networkState === this.NETWORK.LOADING || this.networkState === this.NETWORK.IDLE)
-            this.dispatchEventAsync(new CustomEvent('abort'));
+        if (this.networkState === Sound.NETWORK.LOADING || this.networkState === Sound.NETWORK.IDLE)
+            this.#dispatchEventAsync(new CustomEvent('abort'));
 
-        if (this.networkState !== this.NETWORK.EMPTY) {
-            this.dispatchEventAsync(new CustomEvent('emptied'));
+        if (this.networkState !== Sound.NETWORK.EMPTY) {
+            this.#dispatchEventAsync(new CustomEvent('emptied'));
 
-            if (this.ajax)
-                this.ajax.abort();
+            if (this.#priv.ajax)
+                this.#priv.ajax.abort();
 
-            if (this.selectResourceTimer) {
-                clearTimeout(this.selectResourceTimer);
-                this.selectResourceTimer = null;
+            if (this.#priv.selectResourceTimer) {
+                clearTimeout(this.#priv.selectResourceTimer);
+                this.#priv.selectResourceTimer = null;
             }
 
-            if (this.fetchResourceTimer) {
-                clearTimeout(this.fetchResourceTimer);
-                this.fetchResourceTimer = null;
+            if (this.#priv.selectResourceTimer) {
+                clearTimeout(this.#priv.selectResourceTimer);
+                this.#priv.selectResourceTimer = null;
             }
 
-            if (this._readyState != this.READY.NOTHING)
-                this.readyState = this.READY.NOTHING;
+            if (this.#priv.readyState != Sound.READY.NOTHING)
+                this.#setReadyState(Sound.READY.NOTHING);
 
-            if (!this._paused)
+            if (!this.#priv.paused)
                 this.pause();
 
-            if (this._seeking)
-                this.abortSeek();
+            if (this.#priv.seeking)
+                this.#abortSeek();
 
-            this.nextStartTime = 0;
-            this.buffer = null;
+            this.#priv.nextStartTime = 0;
+            this.#priv.buffer = null;
+            this.#priv.buffered.clear();
+            this.#priv.seekable.clear();
         }
 
         this.playbackRate = this.defaultPlaybackRate;
-        this._error = null;
-        this.autoplaying = true;
-        this.stopInternal();
-        this.sentLoadedData = false;
+        this.#priv.error = null;
+        this.#priv.autoplaying = true;
+        this.#stopInternal();
+        this.#priv.sentLoadedData = false;
 
-        this.selectResource();
+        this.#selectResource();
     }
 
-    selectResource() {
-        this.networkState = this.NETWORK.NO_SOURCE;
-        this.delayingTheLoadEvent = true;
+    #selectResource() {
+        this.#priv.networkState = Sound.NETWORK.NO_SOURCE;
+        this.#priv.delayingTheLoadEvent = true;
 
-        this.selectResourceTimer = setTimeout(this.selectResourceAsync.bind(this), 0);
+        this.#priv.selectResourceTimer = setTimeout(this.#selectResourceAsync.bind(this), 0);
     }
 
-    selectResourceAsync() {
-        this.selectResourceTimer = null;
+    #selectResourceAsync() {
+        this.#priv.selectResourceTimer = null;
 
-        if (!this._src) {
-            this.networkState = this.NETWORK.EMPTY;
+        if (!this.#priv.src) {
+            this.#priv.networkState = Sound.NETWORK.EMPTY;
             return;
         }
 
-        this.networkState = this.NETWORK.LOADING;
-        this.dispatchEventAsync(new CustomEvent('loadstart'));
+        this.#priv.networkState = Sound.NETWORK.LOADING;
+        this.#dispatchEventAsync(new CustomEvent('loadstart'));
 
-        this.fetchResourceTimer = setTimeout(this.fetchResource(), 0);
+        this.#priv.selectResourceTimer = setTimeout(this.#fetchResource(), 0);
     }
 
-    fetchResource() {
-        this.fetchResourceTimer = null;
+    #fetchResource() {
+        this.#priv.selectResourceTimer = null;
 
-        if (this._preload === this.PRELOAD.NONE) {
-            this.networkState = this.NETWORK.IDLE;
-            this.dispatchEventAsync(new CustomEvent('suspend'));
-            this.delayingTheLoadEvent = false;
+        if (this.#priv.preload === Sound.PRELOAD.NONE) {
+            this.#priv.networkState = Sound.NETWORK.IDLE;
+            this.#dispatchEventAsync(new CustomEvent('suspend'));
+            this.#priv.delayingTheLoadEvent = false;
             return;
         }
 
-        this.ajax = new XMLHttpRequest();
-        this.ajax.open("GET", this._src, true);
-        this.ajax.responseType = "arraybuffer";
-        this.ajax.onprogress = this.resourceFetchingProgressed.bind(this);
-        this.ajax.onload = this.resourceFetchingSucceeded.bind(this);
-        this.ajax.onerror = this.resourceFetchingFailed.bind(this);
-        this.ajax.send();
+        this.#priv.ajax = new XMLHttpRequest();
+        this.#priv.ajax.open("GET", this.#priv.src, true);
+        this.#priv.ajax.responseType = "arraybuffer";
+        this.#priv.ajax.onprogress = this.#resourceFetchingProgressed.bind(this);
+        this.#priv.ajax.onload = this.#resourceFetchingSucceeded.bind(this);
+        this.#priv.ajax.onerror = this.#resourceFetchingFailed.bind(this);
+        this.#priv.ajax.send();
     }
 
-    resourceFetchingProgressed() {
-        this.dispatchEventAsync(new CustomEvent('progress'));
+    #resourceFetchingProgressed() {
+        this.#dispatchEventAsync(new CustomEvent('progress'));
     }
 
-    resourceFetchingSucceeded() {
-        if (!this.ajax.response)
+    #resourceFetchingSucceeded() {
+        if (!this.#priv.ajax.response)
             return;
 
-        this.networkState = this.NETWORK.IDLE;
-        this.dispatchEventAsync(new CustomEvent('suspend'));
-        this.readyState = this.READY.METADATA;
+        this.#priv.networkState = Sound.NETWORK.IDLE;
+        this.#dispatchEventAsync(new CustomEvent('suspend'));
+        this.#setReadyState(Sound.READY.METADATA);
 
         try {
             Sound.audioContext.decodeAudioData(
-                this.ajax.response,
-                this.resourceDecodingSucceeded.bind(this),
-                this.resourceDecodingFailed.bind(this)
+                this.#priv.ajax.response,
+                this.#resourceDecodingSucceeded.bind(this),
+                this.#resourceDecodingFailed.bind(this)
             );
         } catch(exception) {
             console.log(exception);
         }
     }
 
-    resourceFetchingFailed() {
+    #resourceFetchingFailed() {
         this.error = { code: MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED };
-        this.networkState = this.NETWORK.NO_SOURCE;
-        this.dispatchEventAsync(new CustomEvent('error'));
-        this.delayingTheLoadEvent = false;
+        this.#priv.networkState = Sound.NETWORK.NO_SOURCE;
+        this.#dispatchEventAsync(new CustomEvent('error'));
+        this.#priv.delayingTheLoadEvent = false;
     }
 
-    resourceDecodingSucceeded(buffer) {
-        this.buffer = buffer;
+    #resourceDecodingSucceeded(buffer) {
+        this.#priv.buffer = buffer;
 
-        this.dispatchEventAsync(new CustomEvent('durationchange'));
-        this.readyState = this.READY.ENOUGH_DATA;
+        this.#priv.buffered.add(0, buffer.duration);
+        this.#priv.seekable.add(0, buffer.duration);
 
-        if (this.autoplaying && this._paused && this._autoplay)
+        this.#dispatchEventAsync(new CustomEvent('durationchange'));
+        this.#setReadyState(Sound.READY.ENOUGH_DATA);
+
+        if (this.#priv.autoplaying && this.#priv.paused && this.#priv.autoplay)
             this.play();
-        this.dispatchEventAsync(new CustomEvent('canplaythrough'));
+        this.#dispatchEventAsync(new CustomEvent('canplaythrough'));
     }
 
-    resourceDecodingFailed(error) {
-        this._error = { code: HTMLMediaElement.MEDIA_ERR_DECODE };
-        this.dispatchEventAsync(new CustomEvent('error'));
-        if (this._readyState === this.READY.NOTHING) {
-            this.networkState = this.NETWORK.EMPTY;
-            this.dispatchEventAsync('emptied');
+    #resourceDecodingFailed(error) {
+        this.#priv.error = { code: HTMLMediaElement.MEDIA_ERR_DECODE };
+        this.#dispatchEventAsync(new CustomEvent('error'));
+        if (this.#priv.readyState === Sound.READY.NOTHING) {
+            this.#priv.networkState = Sound.NETWORK.EMPTY;
+            this.#dispatchEventAsync('emptied');
         } else
-            this.networkState = this.NETWORK.IDLE;
+            this.#priv.networkState = Sound.NETWORK.IDLE;
     }
 
     play() {
-        if (this._networkState === this.NETWORK.EMPTY)
+        if (this.#priv.networkState === Sound.NETWORK.EMPTY)
             this.loadResource();
 
-        if (!this.buffer) {
-            this.autoplaying = true;
+        if (!this.#priv.buffer) {
+            this.#priv.autoplaying = true;
             return;
         }
 
-        if (this.node)
+        if (this.#priv.node)
             return;
 
-        if (this.endedPlayback()) {
-            if (this._playbackRate > 0)
-                this.seekInternal(0);
+        if (this.#endedPlayback()) {
+            if (this.#priv.playbackRate > 0)
+                this.#seekInternal(0);
             else
-                this.seekInternal(this.duration);
+                this.#seekInternal(this.duration);
         }
 
-        if (this._paused || this.endedPlayback()) {
-            this._paused = false;
-            this.dispatchEventAsync(new CustomEvent('play'));
+        if (this.#priv.paused || this.#endedPlayback()) {
+            this.#priv.paused = false;
+            this.#dispatchEventAsync(new CustomEvent('play'));
 
-            if (this._readyState < this.READY.FUTURE_DATA)
-                this.dispatchEventAsync(new CustomEvent('waiting'));
+            if (this.#priv.readyState < Sound.READY.FUTURE_DATA)
+                this.#dispatchEventAsync(new CustomEvent('waiting'));
             else
-                this.dispatchEventAsync(new CustomEvent('playing'));
+                this.#dispatchEventAsync(new CustomEvent('playing'));
         }
 
-        this._autoplay = false;
+        this.#priv.autoplay = false;
 
-        this.playInternal();
+        this.#playInternal();
     }
 
-    playInternal() {
-        this.gainNode = Sound.audioContext.createGain();
-        this.gainNode.gain.value = this._muted ? 0 : this._volume;
-        this.gainNode.connect(Sound.audioContext.destination);
+    #playInternal() {
+        this.#priv.gainNode = Sound.audioContext.createGain();
+        this.#priv.gainNode.gain.value = this.#priv.muted ? 0 : this.#priv.volume;
+        this.#priv.gainNode.connect(Sound.audioContext.destination);
 
-        this.startTime = Sound.audioContext.currentTime;
+        this.#priv.startTime = Sound.audioContext.currentTime;
 
-        this.node = Sound.audioContext.createBufferSource();
-        this.node.connect(this.gainNode);
-        this.node.buffer = this.buffer;
-        this.node.playbackRate.value = this._playbackRate;
-        this.node.onended = this.onended.bind(this);
-        if (this._playbackRate < 0)
-            this.node.start(0, 0, this.nextStartTime);
+        this.#priv.node = Sound.audioContext.createBufferSource();
+        this.#priv.node.connect(this.#priv.gainNode);
+        this.#priv.node.buffer = this.#priv.buffer;
+        this.#priv.node.playbackRate.value = this.#priv.playbackRate;
+        this.#priv.node.onended = this.#onended.bind(this);
+        if (this.#priv.playbackRate < 0)
+            this.#priv.node.start(0, 0, this.#priv.nextStartTime);
         else
-            this.node.start(0, this.nextStartTime, Math.max(0, this.buffer.duration - this.nextStartTime));
+            this.#priv.node.start(0, this.#priv.nextStartTime, Math.max(0, this.#priv.buffer.duration - this.#priv.nextStartTime));
 
-        this.timeUpdateTimer = setInterval(this.sendTimeUpdate.bind(this), 250);
+        this.#priv.timeUpdateTimer = setInterval(this.#sendTimeUpdate.bind(this), 250);
     }
 
-    sendTimeUpdate() {
-        this.dispatchEventAsync(new CustomEvent('timeupdate'));
+    #sendTimeUpdate() {
+        this.#dispatchEventAsync(new CustomEvent('timeupdate'));
     }
 
     pause() {
-        if (this._networkState === this.NETWORK.EMPTY)
+        if (this.#priv.networkState === Sound.NETWORK.EMPTY)
             this.loadResource();
 
-        this._autoplay = false;
+        this.#priv.autoplay = false;
 
-        if (!this._paused) {
-            this._paused = true;
-            this.dispatchEventAsync(new CustomEvent('timeupdate'));
-            this.dispatchEventAsync(new CustomEvent('pause'));
+        if (!this.#priv.paused) {
+            this.#priv.paused = true;
+            this.#dispatchEventAsync(new CustomEvent('timeupdate'));
+            this.#dispatchEventAsync(new CustomEvent('pause'));
         }
 
-        if (!this.buffer || !this.node)
+        if (!this.#priv.buffer || !this.#priv.node)
             return;
 
-        this.nextStartTime = this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
-        this.stopInternal();
+        this.#priv.nextStartTime = Math.max(0, Math.min(this.#priv.playbackRate * (Sound.audioContext.currentTime - this.#priv.startTime), this.duration));
+        this.#stopInternal();
     }
 
-    stopInternal() {
-        if (this.node) {
-            this.node.disconnect();
-            delete this.node;
+    #stopInternal() {
+        if (this.#priv.node) {
+            this.#priv.node.disconnect();
+            this.#priv.node = null;
         }
-        if (this.gainNode) {
-            this.gainNode.disconnect();
-            delete this.gainNode;
+        if (this.#priv.gainNode) {
+            this.#priv.gainNode.disconnect();
+            this.#priv.gainNode = null;
         }
 
-        clearInterval(this.timeUpdateTimer);
+        clearInterval(this.#priv.timeUpdateTimer);
     }
 
-    onended() {
-        if (this._loop) {
-            this.nextStartTime = this._playbackRate < 0 ? this.duration : 0;
-            this.stopInternal();
-            this.playInternal();
+    #onended() {
+        if (this.#priv.loop) {
+            this.#priv.nextStartTime = this.#priv.playbackRate < 0 ? this.duration : 0;
+            this.#stopInternal();
+            this.#playInternal();
             return;
         }
 
-        this.dispatchEventAsync(new CustomEvent('timeupdate'));
+        this.#dispatchEventAsync(new CustomEvent('timeupdate'));
 
-        if (this.endedPlayback() && !this._paused) {
-            this._paused = true;
-            this.nextStartTime = this._playbackRate < 0 ? 0 : this.duration;
-            this.stopInternal();
-            this.dispatchEventAsync(new CustomEvent('pause'));
+        if (this.#endedPlayback() && !this.#priv.paused) {
+            this.#priv.paused = true;
+            this.#priv.nextStartTime = this.#priv.playbackRate < 0 ? 0 : this.duration;
+            this.#stopInternal();
+            this.#dispatchEventAsync(new CustomEvent('pause'));
         }
-        this.dispatchEventAsync(new CustomEvent('ended'));
+        this.#dispatchEventAsync(new CustomEvent('ended'));
     }
 
-    endedPlayback() {
-        if (this._readyState < this.READY.METADATA)
+    #endedPlayback() {
+        if (this.#priv.readyState < Sound.READY.METADATA)
             return false;
 
-        if (this.currentTime >= this.duration && this._playbackRate >= 0 && !this._loop)
+        if (this.currentTime >= this.duration && this.#priv.playbackRate >= 0 && !this.#priv.loop)
             return true;
 
-        if (this.currentTime <= 0 && this._playbackRate <= 0 && !this._loop)
+        if (this.currentTime <= 0 && this.#priv.playbackRate <= 0 && !this.#priv.loop)
             return true;
+
+        return false;
     }
 
-    get ended() {
-        return this.endedPlayback() && this._playbackRate >= 0;
+    #getEnded() {
+        return this.#endedPlayback() && this.#priv.playbackRate >= 0;
     }
 
     addEventListener(eventName, handler) {
-        if (!this.eventListeners[eventName])
-            this.eventListeners[eventName] = [];
+        if (!this.#priv.eventListeners[eventName])
+            this.#priv.eventListeners[eventName] = [];
 
-        var listeners = this.eventListeners[eventName];
+        var listeners = this.#priv.eventListeners[eventName];
         if (listeners.indexOf(handler) !== -1)
             return;
 
@@ -337,10 +498,10 @@ class Sound {
     }
 
     removeEventListener(eventName, handler) {
-        if (!this.eventListeners[eventName])
+        if (!this.#priv.eventListeners[eventName])
             return;
 
-        var listeners = this.eventListeners[eventName];
+        var listeners = this.#priv.eventListeners[eventName];
         var index = listeners.indexOf(handler);
         if (index === -1)
             return;
@@ -348,137 +509,133 @@ class Sound {
         listeners.splice(index, 1);
     }
 
-    dispatchEventAsync(event) {
+    #dispatchEventAsync(event) {
         window.setTimeout(this.dispatchEvent.bind(this, event), 0);
     }
 
     dispatchEvent(event) {
-        if (!this.eventListeners[event.type])
+        if (!this.#priv.eventListeners[event.type])
             return;
 
-        var listeners = this.eventListeners[event.type];
+        var listeners = this.#priv.eventListeners[event.type];
         listeners.forEach(function(listener) {
             listener.call(this, event);
         });
     }
 
-    get src() {
-        return this._src;
+    #getSrc() {
+        return this.#priv.src;
     }
 
-    set src(src) {
-        this._src = src;
-        if (this._src)
+    #setSrc(src) {
+        this.#priv.src = src;
+        if (this.#priv.src)
             this.load();
     }
 
-    get currentSrc() {
-        return this._src;
+    #getCurrentSrc() {
+        return this.#priv.src;
     }
 
-    get setworkState() {
-        return this._networkState;
+    #getNetworkState() {
+        return this.#priv.networkState;
     }
 
-    set networkState(value) {
-        this._networkState = value;
+    #getReadyState() {
+        return this.#priv.readyState;
     }
 
-    get readyState() {
-        return this._readyState;
-    }
+    #setReadyState(value) {
+        var oldState = this.#priv.readyState;
+        var newState = this.#priv.readyState = value;
 
-    set readyState(value) {
-        var oldState = this._readyState;
-        var newState = this._readyState = value;
-
-        if (this._networkState === this.NETWORK.EMPTY)
+        if (this.#priv.networkState === Sound.NETWORK.EMPTY)
             return;
 
-        if (oldState === this.READY.NOTHING && newState === this.READY.METADATA)
-            this.dispatchEventAsync('loadedmetadata');
+        if (oldState === Sound.READY.NOTHING && newState === Sound.READY.METADATA)
+            this.#dispatchEventAsync('loadedmetadata');
 
-        if (oldState === this.READY.METADATA && newState >= this.READY.CURRENT_DATA) {
-            if (!this.sentLoadedData)
-                this.dispatchEventAsync('loadeddata');
+        if (oldState === Sound.READY.METADATA && newState >= Sound.READY.CURRENT_DATA) {
+            if (!this.#priv.sentLoadedData)
+                this.#dispatchEventAsync('loadeddata');
         }
 
-        if (oldState >= this.READY.FUTURE_DATA && newState <= this.READY.CURRENT_DATA) {
-            if (this.autoplaying && this._paused && this._autoplay && !this.endedPlayback() && !this._error) {
-                this.dispatchEventAsync('timeupdate');
-                this.dispatchEventAsync('waiting');
-                this.nextStartTime = this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
-                this.stopInternal();
+        if (oldState >= Sound.READY.FUTURE_DATA && newState <= Sound.READY.CURRENT_DATA) {
+            if (this.#priv.autoplaying && this.#priv.paused && this.#priv.autoplay && !this.#endedPlayback() && !this.#priv.error) {
+                this.#dispatchEventAsync('timeupdate');
+                this.#dispatchEventAsync('waiting');
+                this.#priv.nextStartTime = this.#priv.playbackRate * (Sound.audioContext.currentTime - this.#priv.startTime);
+                this.#stopInternal();
             }
         }
 
-        if (oldState <= this.READY.CURRENT_DATA && newState === this.READY.FUTURE_DATA) {
-            this.dispatchEventAsync('canplay');
-            if (!this._paused)
-                this.dispatchEventAsync('playing');
+        if (oldState <= Sound.READY.CURRENT_DATA && newState === Sound.READY.FUTURE_DATA) {
+            this.#dispatchEventAsync('canplay');
+            if (!this.#priv.paused)
+                this.#dispatchEventAsync('playing');
         }
 
-        if (oldState <= this.READY.CURRENT_DATA && newState === this.READY.FUTURE_DATA) {
-            this.dispatchEventAsync('canplay');
-            if (!this._paused) {
-                this.dispatchEventAsync('playing');
-                this.playInternal();
+        if (oldState <= Sound.READY.CURRENT_DATA && newState === Sound.READY.FUTURE_DATA) {
+            this.#dispatchEventAsync('canplay');
+            if (!this.#priv.paused) {
+                this.#dispatchEventAsync('playing');
+                this.#playInternal();
             }
 
-            if (this.autoplaying && this._paused && this._autoplay)
+            if (this.#priv.autoplaying && this.#priv.paused && this.#priv.autoplay)
                 this.play();
         }
     }
 
-    get preload() {
-        switch (this._preload) {
-            case this.PRELOAD.NONE: return 'none';
-            case this.PRELOAD.METADATA: return 'metadata';
-            case this.PRELOAD.AUTO: return 'auto';
+    #getPreload() {
+        switch (this.#priv.preload) {
+            case Sound.PRELOAD.NONE: return 'none';
+            case Sound.PRELOAD.METADATA: return 'metadata';
+            case Sound.PRELOAD.AUTO: return 'auto';
             default: return '';
         }
     }
 
-    set preload(preload) {
+    #setPreload(preload) {
         switch (preload) {
             default:
             case 'none':
-                this._preload = this.PRELOAD.NONE;
+                this.#priv.preload = Sound.PRELOAD.NONE;
                 break;
             case 'metadata':
-                this._preload = this.PRELOAD.METADATA;
-                if (this._networkState === this.NETWORK.EMPTY)
+                this.#priv.preload = Sound.PRELOAD.METADATA;
+                if (this.#priv.networkState === Sound.NETWORK.EMPTY)
                     this.load();
                 break;
             case 'auto':
-                this._preload = this.PRELOAD.auto;
-                if (this._networkState === this.NETWORK.EMPTY)
+                this.#priv.preload = Sound.PRELOAD.auto;
+                if (this.#priv.networkState === Sound.NETWORK.EMPTY)
                     this.load();
                 break;
         }
     }
 
-    get currentTime() {
-        if (!this.node)
-            return this.nextStartTime;
-        return this.nextStartTime + this._playbackRate * (Sound.audioContext.currentTime - this.startTime);
+    #getCurrentTime() {
+        if (!this.#priv.node)
+            return this.#priv.nextStartTime;
+        return this.#priv.nextStartTime + this.#priv.playbackRate * (Sound.audioContext.currentTime - this.#priv.startTime);
     }
 
-    set currentTime(time) {
-        this.seekInternal(time, {async: true})
+    #setCurrentTime(time) {
+        this.#seekInternal(time, {async: true})
     }
 
-    seekInternal(time, options) {
-        if (this._readyState == this.READY.NOTHING)
+    #seekInternal(time, options) {
+        if (this.#priv.readyState == Sound.READY.NOTHING)
             return;
 
-        if (this._seeking)
-            abortSeek();
+        if (this.#priv.seeking)
+            this.#abortSeek();
 
-        this._seeking = true;
+        this.#priv.seeking = true;
 
-        if (this.node)
-            this.stopInternal();
+        if (this.#priv.node)
+            this.#stopInternal();
 
         let performSeek = (time) => {
             let targetTime = parseFloat(time);
@@ -487,153 +644,132 @@ class Sound {
             if (targetTime < 0)
                 targetTime = 0;
 
-            this.dispatchEventAsync(new CustomEvent('seeking'));
-            this.nextStartTime = targetTime;
-            this._seeking = false;
-            this.dispatchEventAsync(new CustomEvent('timeupdate'));
-            this.dispatchEventAsync(new CustomEvent('seeked'));
+            this.#dispatchEventAsync(new CustomEvent('seeking'));
+            this.#priv.nextStartTime = targetTime;
+            this.#priv.seeking = false;
+            this.#dispatchEventAsync(new CustomEvent('timeupdate'));
+            this.#dispatchEventAsync(new CustomEvent('seeked'));
 
-            if (!this._paused)
-                this.playInternal();
+            if (!this.#priv.paused)
+                this.#playInternal();
         }
 
         if (options?.async)
-            this._seekOperation = window.setTimeout(() => { performSeek(time); });
+            this.#priv.seekOperation = window.setTimeout(() => { performSeek(time); });
         else
             performSeek(time);
     }
 
-    abortSeek() {
-        if (!this._seeking || !this._seekOperation)
+    #abortSeek() {
+        if (!this.#priv.seeking || !this.#priv.seekOperation)
             return;
 
-        this._seeking = false;
+        this.#priv.seeking = false;
         clearTimeout(_seekOperation);
         _seekOperation = null;
     }
 
-    get duration() {
-        if (!this.buffer)
+    #getDuration() {
+        if (!this.#priv.buffer)
             return NaN;
 
-        return this.buffer.duration;
+        return this.#priv.buffer.duration;
     }
 
-    get paused() {
-        return this._paused;
+    #getPaused() {
+        return this.#priv.paused;
     }
 
-    get playbackRate() {
-        return this._playbackRate;
+    #getPlaybackRate() {
+        return this.#priv.playbackRate;
     }
 
-    set playbackRate(rate) {
-        var oldPlaybackRate = this._playbackRate;
-        this._playbackRate = parseFloat(rate);
-        this.dispatchEventAsync(new CustomEvent('ratechange'));
+    #setPlaybackRate(rate) {
+        var oldPlaybackRate = this.#priv.playbackRate;
+        this.#priv.playbackRate = parseFloat(rate);
+        this.#dispatchEventAsync(new CustomEvent('ratechange'));
 
-        if (this.node) {
+        if (this.#priv.node) {
             var currentTime = Sound.audioContext.currentTime
-            this.nextStartTime += oldPlaybackRate * (currentTime - this.startTime);
-            this.startTime = currentTime;
-            this.node.playbackRate.value = this._playbackRate;
+            this.#priv.nextStartTime += oldPlaybackRate * (currentTime - this.#priv.startTime);
+            this.#priv.startTime = currentTime;
+            this.#priv.node.playbackRate.value = this.#priv.playbackRate;
 
-            if ((oldPlaybackRate <= 0) != (this._playbackRate <= 0)) {
-                this.stopInternal();
-                this.playInternal();
+            if ((oldPlaybackRate <= 0) != (this.#priv.playbackRate <= 0)) {
+                this.#stopInternal();
+                this.#playInternal();
             }
         }
     }
 
-    get defaultPlaybackRate() {
-        return this._defaultPlaybackRate;
+    #getDefaultPlaybackRate() {
+        return this.#priv.defaultPlaybackRate;
     }
 
-    set defaultPlaybackRate(rate) {
-        this._defaultPlaybackRate = parseFloat(rate);
-        this.dispatchEventAsync(new CustomEvent('ratechange'));
+    #setDefaultPlaybackRate(rate) {
+        this.#priv.defaultPlaybackRate = parseFloat(rate);
+        this.#dispatchEventAsync(new CustomEvent('ratechange'));
     }
 
-    get volume() {
-        return this._volume;
+    #getVolume() {
+        return this.#priv.volume;
     }
 
-    set volume(volume) {
-        if (this._volume === volume)
+    #setVolume(volume) {
+        if (this.#priv.volume === volume)
             return;
 
-        this._volume = parseFloat(volume);
-        this.dispatchEventAsync(new CustomEvent('volumechange'));
+        this.#priv.volume = parseFloat(volume);
+        this.#dispatchEventAsync(new CustomEvent('volumechange'));
 
-        if (this.gainNode)
-            this.gainNode.gain.value = this._muted ? 0 : this._volume;
+        if (this.#priv.gainNode)
+            this.#priv.gainNode.gain.value = this.#priv.muted ? 0 : this.#priv.volume;
     }
 
-    get muted() {
-        return this._muted;
+    #getMuted() {
+        return this.#priv.muted;
     }
 
-    set muted(muted) {
-        if (this._muted === muted)
+    #setMuted(muted) {
+        if (this.#priv.muted === muted)
             return;
 
-        this._muted = muted;
-        this.dispatchEventAsync(new CustomEvent('volumechange'));
+        this.#priv.muted = muted;
+        this.#dispatchEventAsync(new CustomEvent('volumechange'));
 
-        if (this.gainNode)
-            this.gainNode.gain.value = this._muted ? 0 : this._volume;
+        if (this.#priv.gainNode)
+            this.#priv.gainNode.gain.value = this.#priv.muted ? 0 : this.#priv.volume;
     }
 
-    get autoplay() {
-        return this._autoplay;
+    #getAutoplay() {
+        return this.#priv.autoplay;
     }
 
-    set autoplay(autoplay) {
-        if (this._autoplay === autoplay)
+    #setAutoplay(autoplay) {
+        if (this.#priv.autoplay === autoplay)
             return;
 
-        this._autoplay = autoplay;
-        if (this._autoplay && this._networkState === this.NETWORK.EMPTY)
+        this.#priv.autoplay = autoplay;
+        if (this.#priv.autoplay && this.#priv.networkState === Sound.NETWORK.EMPTY)
             this.load();
     }
 
-    get loop() {
-        return this._loop;
+    #getLoop() {
+        return this.#priv.loop;
     }
 
-    set loop(loop) {
-        this._loop = loop;
+    #setLoop(loop) {
+        this.#priv.loop = loop;
+    }
+
+    #getBuffered() {
+        return this.#priv.buffered;
+    }
+
+    #getSeekable() {
+        return this.#priv.seekable;
     }
 }
-
-Sound.prototype.ERR = {
-    NONE: 0,
-    ABORTED: 1,
-    NETWORK: 2,
-    DECODE: 3,
-    SRC_NOT_SUPPORTED: 4,
-};
-
-Sound.prototype.NETWORK = {
-    EMPTY: 0,
-    IDLE: 1,
-    LOADING: 2,
-    NO_SOURCE: 3,
-};
-
-Sound.prototype.READY = {
-    NOTHING: 0,
-    METADATA: 1,
-    CURRENT_DATA: 2,
-    FUTURE_DATA: 3,
-    ENOUGH_DATA: 4,
-};
-
-Sound.prototype.PRELOAD = {
-    NONE: 0,
-    METADATA: 1,
-    AUTO: 2,
-};
 
 document.createElement = function(elementName) {
     if (elementName === "Audio" || elementName === "audio")
